@@ -13,8 +13,8 @@ SEC_HEADERS = {
 # Google search and download headers
 DOWNLOAD_HEADERS = {
     "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        "AppleWebKit/537.36 (KHTML, like Gecko)"
         "Chrome/122.0.0.0 Safari/537.36"
     ),
     "Accept": "application/pdf",
@@ -22,7 +22,7 @@ DOWNLOAD_HEADERS = {
 }
 
 # API base URL for the document database
-API_BASE = "http://54.198.215.188:8000"
+API_BASE = "http://98.82.33.222:2345"
 
 def normalize_company_name(name):
     return re.sub(r"[^a-zA-Z0-9]", "", name).lower()
@@ -276,7 +276,7 @@ class HybridSearch:
 
     def _synthesize_results(self, doc_results, web_results):
         synthesis_prompt = f"""
-        Combine insights from these two sources:
+        Combine and summarize insights from these two sources into a single paragraph:
         
         Company Documents:
         {doc_results}
@@ -288,6 +288,8 @@ class HybridSearch:
         1. Key facts from official documents
         2. Market context from web sources
         3. Potential synergies between internal and external factors
+
+        
         """
         
         return self._query_source({
