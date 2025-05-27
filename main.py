@@ -25,19 +25,18 @@ if st.session_state.doc_ids:
     for doc_id in st.session_state.doc_ids:
         st.write(f"- {doc_id}")
 
-
 if st.button("🔍 Begin Processing"):
     if not company_name:
         st.warning("Please enter a company name.")
     else:
         with st.spinner("Checking for documents..."):
             doc_ids = retrieve_company_documents(company_name)
+
             if doc_ids:
-                st.session_state.doc_ids = doc_ids  # Save retrieved IDs
-                if st.session_state.doc_ids:
-                    st.markdown(f"### 📄 {company_name.capitalize()} Document IDs:")
-                    for doc_id in st.session_state.doc_ids:
-                        st.write(f"- {doc_id}")
+                st.session_state.doc_ids = doc_ids
+                st.markdown(f"### 📄 {company_name.capitalize()} Document IDs:")
+                for doc_id in st.session_state.doc_ids:
+                    st.write(f"- {doc_id}")
                 st.success("Proceed to Next Step (Analysis)")
             else:
                 st.warning("No existing documents found. Trying to download new ones...")
@@ -86,29 +85,43 @@ categories = [
 
 selected_categories = st.multiselect("Select categories to query:", categories)
 
-search_option = st.radio("Search Type", ("Documents Only", "Web Only", "Hybrid"), key="cat_search_option")
+search_option = st.radio("Analysis Type", ("Documents Only", "Web Only", "Hybrid"), key="cat_search_option")
 
+# Load predefined prompts
 prompt_df = load_prompts()
 
+# Filter based on category selection
 if "ALL" in selected_categories:
     filtered_prompts = prompt_df
 else:
     filtered_prompts = prompt_df[prompt_df['category'].isin(selected_categories)]
 
+# --- Custom Questions ---
+st.subheader("💬 Ask Your Own Questions")
+
+custom_questions = st.text_area(
+    "Enter your own questions (one per line):",
+    placeholder="E.g.\nWhat are the latest developments in AI for this company?\nHow is the company's financial health?"
+)
+
+custom_questions_list = [q.strip() for q in custom_questions.strip().split('\n') if q.strip()]
+
+# --- Run Analysis ---
 if st.button("🧠 Run Analysis"):
     if not company_name:
         st.warning("Please enter a company name.")
-    elif filtered_prompts.empty:
-        st.warning("No prompts found for the selected categories.")
-    elif not st.session_state.get("doc_ids"):
+    elif filtered_prompts.empty and not custom_questions_list:
+        st.warning("No prompts or custom questions provided.")
+    elif not st.session_state.get("doc_ids") and search_option != "Web Only":
         st.warning("Please retrieve or upload documents first.")
     else:
         with st.spinner("Running queries..."):
             search = HybridSearch()
-            doc_ids = st.session_state.doc_ids
-            os.makedirs("companies",exist_ok=True)
+            doc_ids = st.session_state.get("doc_ids", [])
+            os.makedirs("companies", exist_ok=True)
             os.makedirs(f"companies/{company_name}", exist_ok=True)
 
+            # Predefined Prompt Analysis
             for category in filtered_prompts['category'].unique():
                 st.subheader(f"📂 {category}")
                 cat_prompts = filtered_prompts[filtered_prompts['category'] == category]
@@ -118,7 +131,6 @@ if st.button("🧠 Run Analysis"):
                 for _, row in cat_prompts.iterrows():
                     prompt = row['prompts']
 
-                    # Perform the search
                     if search_option == "Documents Only":
                         response = search.query_documents(prompt, doc_ids)
                         search_type = "Documents Only"
@@ -126,29 +138,21 @@ if st.button("🧠 Run Analysis"):
                         response = search.query_web(prompt + f" for {company_name}")
                         search_type = "Web Only"
                     else:
-                        response = search.hybrid_search(prompt, prompt+f" for {company_name}", doc_ids)
+                        response = search.hybrid_search(prompt, prompt + f" for {company_name}", doc_ids)
                         search_type = "Hybrid"
 
-                    # Extract only the content from response
-                    if isinstance(response, dict):
-                        answer = response.get("content", "No response returned.")
-                    else:
-                        answer = response or "No response returned."
+                    answer = response.get("content", "No response returned.") if isinstance(response, dict) else response or "No response returned."
 
-                    # Show in UI
                     st.markdown(f"**Question:** {prompt}")
                     st.markdown(f"**Answer:** \n {answer}")
-            
                     st.markdown("---")
 
-                    # Store result for saving
                     results.append({
                         "Prompt": prompt,
                         "Response": answer,
                         "Search Type": search_type
                     })
 
-                # Save results to DataFrame and Excel
                 df_results = pd.DataFrame(results)
                 st.markdown(f"**Responses table for '{category}':**")
                 st.dataframe(df_results)
@@ -157,12 +161,52 @@ if st.button("🧠 Run Analysis"):
                 output_path = f"companies/{company_name}/{company_name}_{safe_category}.xlsx".replace(" ", "_")
                 df_results.to_excel(output_path, index=False)
 
-                # Download button
                 if os.path.exists(output_path):
                     with open(output_path, "rb") as f:
                         st.download_button(
                             label=f"📥 Download '{category}' Responses as Excel",
                             data=f,
                             file_name=f"{safe_category}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+
+            # Custom Question Analysis
+            if custom_questions_list:
+                st.subheader("📝 Custom Questions")
+                custom_results = []
+
+                for prompt in custom_questions_list:
+                    if search_option == "Documents Only":
+                        response = search.query_documents(prompt, doc_ids)
+                        search_type = "Documents Only"
+                    elif search_option == "Web Only":
+                        response = search.query_web(prompt + f" for {company_name}")
+                        search_type = "Web Only"
+                    else:
+                        response = search.hybrid_search(prompt, prompt + f" for {company_name}", doc_ids)
+                        search_type = "Hybrid"
+
+                    answer = response.get("content", "No response returned.") if isinstance(response, dict) else response or "No response returned."
+
+                    st.markdown(f"**Question:** {prompt}")
+                    st.markdown(f"**Answer:** \n{answer}")
+                    st.markdown("---")
+
+                    custom_results.append({
+                        "Prompt": prompt,
+                        "Response": answer,
+                        "Search Type": search_type
+                    })
+
+                df_custom = pd.DataFrame(custom_results)
+                output_custom_path = f"companies/{company_name}/{company_name}_Custom_Questions.xlsx".replace(" ", "_")
+                df_custom.to_excel(output_custom_path, index=False)
+
+                if os.path.exists(output_custom_path):
+                    with open(output_custom_path, "rb") as f:
+                        st.download_button(
+                            label=f"📥 Download Custom Questions Responses as Excel",
+                            data=f,
+                            file_name="Custom_Questions.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
