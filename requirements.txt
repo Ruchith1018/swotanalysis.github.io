@@ -3,3 +3,4 @@ googlesearch-python
 weasyprint
 streamlit
 pandas
+pango
